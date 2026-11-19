@@ -313,5 +313,7 @@
   });
 
   addEventListener('resize', () => changed(false));
+  // Pasting a different link into an already-open tab changes only the part after '#', which does not reload the page.
+  addEventListener('hashchange', () => { readHash(); changed(true); });
   readHash(); normalize(); build(); changed(true);
 })();

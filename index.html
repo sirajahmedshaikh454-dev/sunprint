@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sunprint</title>
+<meta name="description" content="A cyanotype of the sunlight in your room: see where the sun lands, and a one-image calendar of when it reaches your desk or plant, all year.">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="top">
+  <h1>Sun<em>print</em></h1>
+  <p class="tag">A cyanotype of the sunlight in your room. Tell it your city and your window; watch the sun patch cross your floor; click a spot to print a whole year of when it is lit.</p>
+</header>
+
+<main class="layout">
+  <div class="left">
+    <section class="card" aria-labelledby="planTitle">
+      <h2 id="planTitle">The room, from above</h2>
+      <div id="hud" class="hud" aria-live="polite"></div>
+      <canvas id="plan" tabindex="0" role="img" aria-label="Room plan"></canvas>
+      <div class="timebar">
+        <label for="date">Date <output id="dateText"></output></label>
+        <input id="date" type="range" min="1" max="365" step="1">
+        <label for="time">Time <output id="timeText"></output></label>
+        <input id="time" type="range" min="0" max="1439" step="5">
+        <button id="playDay" type="button">Play the day</button>
+      </div>
+      <p class="small">Click or drag on the plan to move your spot. With the plan focused, the arrow keys nudge it (Shift for bigger steps). Click or drag on the year print to jump to that moment.</p>
+    </section>
+
+    <section class="card" aria-labelledby="printTitle">
+      <h2 id="printTitle">The year print <small id="spotLabel"></small></h2>
+      <canvas id="print" role="img" aria-label="Year print: when direct sunlight reaches the spot"></canvas>
+      <p class="legend"><i class="k night"></i>night <i class="k shade"></i>daylight, shaded <i class="k sun"></i>direct sun on your spot</p>
+      <canvas id="months" role="img" aria-label="Average hours of direct sun per day in each month"></canvas>
+      <ul id="summary" class="summary"></ul>
+      <p id="egg" class="egg" hidden></p>
+      <div class="buttons">
+        <button id="save" type="button">Download the print (PNG)</button>
+        <button id="copy" type="button">Copy a link to this room</button>
+        <span id="status" class="small" role="status"></span>
+      </div>
+    </section>
+  </div>
+
+  <aside class="controls" aria-label="Settings">
+    <section class="card"><h2>Examples</h2><div id="presets" class="presets"></div></section>
+    <section class="card"><h2>Place</h2><div id="place" class="fields"></div></section>
+    <section class="card"><h2>Room</h2><div id="room" class="fields"></div></section>
+    <section class="card"><h2>Window</h2><div id="window" class="fields"></div></section>
+    <section class="card"><h2>Your spot</h2><div id="spot" class="fields"></div></section>
+    <section class="card"><h2>View</h2><div id="view" class="fields"></div></section>
+  </aside>
+</main>
+
+<footer class="foot">
+  <p>Everything runs on your computer. Nothing is sent anywhere, nothing is stored. Sun positions use NOAA's low-precision algorithm, accurate to about half a degree; clocks are standard time unless you tick daylight saving. Direct sun only: no clouds, no neighbouring buildings, no trees.</p>
+</footer>
+
+<script src="solar.js"></script>
+<script src="sunlight.js"></script>
+<script src="cities.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

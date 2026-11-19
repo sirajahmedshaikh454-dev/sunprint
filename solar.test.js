@@ -21,7 +21,7 @@ test('agrees with a full astronomy library to within 0.6 degrees (worst measured
   for (const [, lat, lon, tz] of PLACES) for (const doy of [1, 45, 80, 120, 172, 220, 266, 310, 355]) for (const minutes of [360, 480, 600, 720, 840, 960, 1080]) {
     const got = S.position(lat, lon, tz, doy, minutes), ref = reference(lat, lon, tz, doy, minutes);
     if (ref.el < 5) continue;                                  // near the horizon refraction and azimuth get twitchy
-    worstEl = Math.max(worstEl, Math.abs(got.el - ref.el)); worstAz = Math.max(worstAz, angDiff(got.az, ref.az)); n++;
+    worstEl = Math.max(worstEl, Math.abs(got.el - ref.el)); if (ref.el <= 75) worstAz = Math.max(worstAz, angDiff(got.az, ref.az)); n++;   // azimuth is ill-defined when the Sun is nearly overhead
   }
   assert.ok(n > 150, 'enough samples: ' + n);
   assert.ok(worstEl < 0.6, 'elevation error ' + worstEl.toFixed(3));

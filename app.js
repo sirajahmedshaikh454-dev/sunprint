@@ -12,23 +12,10 @@
   const COLORS = { paper: '#0a2f52', floor: '#124a7a', night: [6, 30, 53], shade: [28, 93, 140], sun: [255, 243, 196], line: '#e8f1f8', gold: '#ffd75e' };
 
   // ---------- state ----------
-  const now = new Date();
-  const DEFAULT = { lat: 24.86, lon: 67.01, tz: 5, dst: 0, W: 4.5, L: 3.5, facing: 180, wx: 2.25, ww: 1.6, ws: 0.9, wt: 2.1, wo: 0.4,
-    doy: S.dayOfYear(now.getMonth() + 1, Math.min(now.getDate(), 31)), minutes: 600, sx: 3.2, sy: 1.8, sh: 0, hours: 0, noon: 0 };
+  const SS = window.Sunstate;
+  const DEFAULT = SS.defaults(new Date());
   const state = { ...DEFAULT };
-  const KEYS = { lat: 'la', lon: 'lo', tz: 'tz', dst: 'ds', W: 'w', L: 'l', facing: 'f', wx: 'wx', ww: 'ww', ws: 'ws', wt: 'wt', wo: 'wo', doy: 'd', minutes: 't', sx: 'sx', sy: 'sy', sh: 'sh', hours: 'hh' };
-
-  function normalize() {
-    const s = state;
-    s.lat = clamp(num(s.lat, 0), -85, 85); s.lon = clamp(num(s.lon, 0), -180, 180); s.tz = clamp(num(s.tz, 0), -12, 14); s.dst = s.dst ? 1 : 0;
-    s.W = clamp(num(s.W, 4.5), 1.5, 15); s.L = clamp(num(s.L, 3.5), 1.5, 15);
-    s.facing = ((num(s.facing, 180) % 360) + 360) % 360;
-    s.ww = clamp(num(s.ww, 1.6), 0.3, s.W); s.wx = clamp(num(s.wx, s.W / 2), s.ww / 2, s.W - s.ww / 2);
-    s.ws = clamp(num(s.ws, 0.9), 0, 2.5); s.wt = clamp(num(s.wt, 2.1), s.ws + 0.2, 3.2); s.wo = clamp(num(s.wo, 0), 0, 3);
-    s.sx = clamp(num(s.sx, s.W / 2), 0, s.W); s.sy = clamp(num(s.sy, s.L / 2), 0, s.L); s.sh = clamp(num(s.sh, 0), 0, 2);
-    s.doy = clamp(Math.round(num(s.doy, 1)), 1, 365); s.minutes = clamp(Math.round(num(s.minutes, 600)), 0, 1439);
-    s.hours = s.hours ? 1 : 0; s.noon = s.noon ? 1 : 0;
-  }
+  const normalize = () => SS.normalize(state);
   const tzEff = () => state.tz + (state.dst ? 1 : 0);
   const ctx = () => ({ lat: state.lat, lon: state.lon, tz: tzEff(), facing: state.facing, win: { x: state.wx, w: state.ww, sill: state.ws, top: state.wt, overhang: state.wo } });
   const room = () => ({ W: state.W, L: state.L });
@@ -43,9 +30,11 @@
     const r = el('input'); r.type = 'range'; r.step = o.step; r.setAttribute('aria-label', o.label);
     const digits = o.digits ?? 2;
     const bounds = () => { const [lo, hi] = o.range(); n.min = r.min = lo; n.max = r.max = hi; };
-    const show = () => { bounds(); const v = state[o.key]; n.value = +v.toFixed(digits); r.value = v; };
-    n.addEventListener('input', () => { const v = parseFloat(n.value); if (Number.isFinite(v)) { state[o.key] = v; changed(true); } });
-    n.addEventListener('change', () => { normalize(); show(); });
+    const show = () => { bounds(); const v = state[o.key]; if (document.activeElement !== n) n.value = +v.toFixed(digits); r.value = v; };
+    // While typing, only take values already inside the allowed range, so "1" on the way to "10" does not squash the room
+    // (and drag the window with it). When the box is left, take whatever was typed and clamp it.
+    n.addEventListener('input', () => { const v = parseFloat(n.value), [lo, hi] = o.range(); if (Number.isFinite(v) && v >= lo && v <= hi) { state[o.key] = v; changed(true); } });
+    n.addEventListener('change', () => { const v = parseFloat(n.value); if (Number.isFinite(v)) state[o.key] = v; normalize(); bounds(); n.value = +state[o.key].toFixed(digits); r.value = state[o.key]; changed(true); });   // on leaving the box
     r.addEventListener('input', () => { state[o.key] = parseFloat(r.value); changed(true); });
     wrap.append(lab, n, r); parent.append(wrap); refreshers.push(show); show();
     return wrap;
@@ -83,7 +72,7 @@
     field(w, { key: 'wx', label: 'Window centre, from the left wall (m)', step: 0.05, digits: 2, range: () => [state.ww / 2, state.W - state.ww / 2] });
     field(w, { key: 'ws', label: 'Sill height (m)', step: 0.05, digits: 2, range: () => [0, 2.5] });
     field(w, { key: 'wt', label: 'Top of the window (m)', step: 0.05, digits: 2, range: () => [state.ws + 0.2, 3.2] });
-    field(w, { key: 'wo', label: 'Overhang or balcony above it (m deep)', step: 0.05, digits: 2, range: () => [0, 3] });
+    field(w, { key: 'wo', label: 'Overhang or balcony above it (m deep, assumed to run the whole wall)', step: 0.05, digits: 2, range: () => [0, 3] });
 
     const sp = $('spot');
     field(sp, { key: 'sx', label: 'Along the wall, x (m)', step: 0.05, digits: 2, range: () => [0, state.W] });
@@ -106,7 +95,7 @@
   let timer = 0, dirty = true, print = null;
   function changed(geometry) { normalize(); if (geometry) dirty = true; clearTimeout(timer); timer = setTimeout(render, 0); }
   function render() {
-    if (dirty || !print) { print = LT.yearPrint(ctx(), spot()); dirty = false; summarise(); }
+    if (dirty || !print) { print = LT.yearPrint(ctx(), spot()); buildPrintImage(); dirty = false; summarise(); }
     drawPlan(); drawPrint(); drawMonths(); updateHud(); syncControls(); writeHash();
   }
   function syncControls() {
@@ -114,6 +103,8 @@
     $('date').value = state.doy; $('time').value = state.minutes;
     $('dateText').textContent = dateText(state.doy); $('timeText').textContent = fmtTime(state.minutes);
     $('facingText').textContent = 'facing ' + compass(state.facing);
+    if (!state.noon) eggShown = false;
+    $('egg').hidden = !(eggShown && state.noon);
     $('spotLabel').textContent = `spot at ${state.sx.toFixed(2)} m, ${state.sy.toFixed(2)} m, ${state.sh.toFixed(2)} m high`;
   }
 
@@ -159,7 +150,7 @@
     g.strokeStyle = COLORS.line; g.lineWidth = 4; g.strokeRect(X(0), Y(0), state.W * sc, state.L * sc);
     g.fillStyle = COLORS.paper; g.fillRect(X(state.wx - state.ww / 2), Y(0) - 4, state.ww * sc, 8);
     g.lineWidth = 2; g.beginPath(); g.moveTo(X(state.wx - state.ww / 2), Y(0) - 2); g.lineTo(X(state.wx + state.ww / 2), Y(0) - 2); g.moveTo(X(state.wx - state.ww / 2), Y(0) + 2); g.lineTo(X(state.wx + state.ww / 2), Y(0) + 2); g.stroke();
-    if (state.wo > 0) { g.setLineDash([5, 4]); g.lineWidth = 1.5; g.strokeRect(X(state.wx - state.ww / 2), Y(0) - state.wo * sc, state.ww * sc, state.wo * sc); g.setLineDash([]); }
+    if (state.wo > 0) { g.setLineDash([5, 4]); g.lineWidth = 1.5; g.strokeRect(X(0), Y(0) - state.wo * sc, state.W * sc, state.wo * sc); g.setLineDash([]); }
     // sun arrow (horizontal direction the light travels)
     g.fillStyle = g.strokeStyle = COLORS.gold; g.font = '13px Consolas, monospace'; g.textAlign = 'center';
     if (sun.s.up && sun.s.cosD > 0) {
@@ -178,24 +169,31 @@
     g.beginPath(); g.moveTo(px - 15, py); g.lineTo(px + 15, py); g.moveTo(px, py - 15); g.lineTo(px, py + 15); g.stroke();
   }
 
-  function paintPrint(g, W, H, opts) {
-    const padL = 44, padR = 12, padT = 12, padB = 26, iw = W - padL - padR, ih = H - padT - padB, STEPS = print.STEPS;
-    const off = paintPrint.off || (paintPrint.off = document.createElement('canvas'));
-    off.width = 365; off.height = STEPS;
-    const og = off.getContext('2d'), img = og.createImageData(365, STEPS);
+  const PALETTE = [COLORS.night, COLORS.shade, COLORS.sun], printImage = document.createElement('canvas');
+  function buildPrintImage() {
+    const STEPS = print.STEPS; printImage.width = 365; printImage.height = STEPS;
+    const og = printImage.getContext('2d'), img = og.createImageData(365, STEPS);
     for (let d = 0; d < 365; d++) for (let i = 0; i < STEPS; i++) {
-      const c = [COLORS.night, COLORS.shade, COLORS.sun][print.cells[d * STEPS + i]], k = (i * 365 + d) * 4;
+      const c = PALETTE[print.cells[d * STEPS + i]], k = (i * 365 + d) * 4;
       img.data[k] = c[0]; img.data[k + 1] = c[1]; img.data[k + 2] = c[2]; img.data[k + 3] = 255;
     }
     og.putImageData(img, 0, 0);
-    g.imageSmoothingEnabled = false; g.drawImage(off, padL, padT, iw, ih);
+  }
+
+  function paintPrint(g, W, H, opts) {
+    const padL = 44, padR = 12, padT = 12, padB = 26, iw = W - padL - padR, ih = H - padT - padB, STEPS = print.STEPS;
+    g.imageSmoothingEnabled = false; g.drawImage(printImage, padL, padT, iw, ih);
     g.strokeStyle = 'rgba(232,241,248,.18)'; g.fillStyle = COLORS.line; g.lineWidth = 1; g.font = '11px Consolas, monospace'; g.textAlign = 'right';
     for (const h of [0, 3, 6, 9, 12, 15, 18, 21, 24]) { const y = padT + h / 24 * ih; g.beginPath(); g.moveTo(padL, y); g.lineTo(padL + iw, y); g.stroke(); g.fillText(String(h).padStart(2, '0') + ':00', padL - 6, y + 4); }
     g.textAlign = 'center';
     for (let m = 0; m < 12; m++) { const x = padL + (S.MONTH_START[m] - 1) / 365 * iw; g.beginPath(); g.moveTo(x, padT); g.lineTo(x, padT + ih); g.stroke(); g.fillText(S.MONTH_NAMES[m].slice(0, 3), x + iw / 24, H - 8); }
     if (opts.noon) {                                                         // the analemma, flattened: solar noon wanders through the year
       g.strokeStyle = COLORS.gold; g.lineWidth = 1.5; g.beginPath();
-      for (let d = 1; d <= 365; d++) { const x = padL + (d - 0.5) / 365 * iw, y = padT + S.solarNoon(state.lon, tzEff(), d) / 1440 * ih; d === 1 ? g.moveTo(x, y) : g.lineTo(x, y); }
+      let prev = null;
+      for (let d = 1; d <= 365; d++) {
+        const x = padL + (d - 0.5) / 365 * iw, v = ((S.solarNoon(state.lon, tzEff(), d) % 1440) + 1440) % 1440, y = padT + v / 1440 * ih;
+        (prev === null || Math.abs(v - prev) > 720) ? g.moveTo(x, y) : g.lineTo(x, y); prev = v;
+      }
       g.stroke();
     }
     if (opts.cursor) {
@@ -244,7 +242,7 @@
   // ---------- interaction ----------
   let dragging = null;
   const planPoint = e => { const r = $('plan').getBoundingClientRect(); return { x: (e.clientX - r.left - view.ox) / view.sc, y: (e.clientY - r.top - view.oy) / view.sc }; };
-  $('plan').addEventListener('pointerdown', e => { dragging = 'plan'; $('plan').setPointerCapture(e.pointerId); movePlan(e); });
+  $('plan').addEventListener('pointerdown', e => { if (e.button !== 0) return; stopPlay(); dragging = 'plan'; $('plan').setPointerCapture(e.pointerId); movePlan(e); });
   $('plan').addEventListener('pointermove', e => { if (dragging === 'plan') movePlan(e); });
   $('plan').addEventListener('pointerup', () => { dragging = null; });
   function movePlan(e) { const p = planPoint(e); state.sx = p.x; state.sy = p.y; changed(true); }
@@ -256,25 +254,26 @@
     const r = $('print').getBoundingClientRect(), fx = (e.clientX - r.left - printBox.padL) / printBox.iw, fy = (e.clientY - r.top - printBox.padT) / printBox.ih;
     state.doy = Math.ceil(clamp(fx, 0, 1) * 365) || 1; state.minutes = clamp(Math.round(fy * 1440 / 5) * 5, 0, 1439); changed(false);
   }
-  $('print').addEventListener('pointerdown', e => { dragging = 'print'; $('print').setPointerCapture(e.pointerId); movePrint(e); });
+  $('print').addEventListener('pointerdown', e => { if (e.button !== 0) return; stopPlay(); dragging = 'print'; $('print').setPointerCapture(e.pointerId); movePrint(e); });
   $('print').addEventListener('pointermove', e => { if (dragging === 'print') movePrint(e); });
   $('print').addEventListener('pointerup', () => { dragging = null; });
-  $('date').addEventListener('input', e => { state.doy = +e.target.value; changed(false); });
-  $('time').addEventListener('input', e => { state.minutes = +e.target.value; changed(false); });
+  for (const id of ['plan', 'print']) for (const ev of ['pointercancel', 'lostpointercapture']) $(id).addEventListener(ev, () => { dragging = null; });
+  $('date').addEventListener('input', e => { stopPlay(); state.doy = +e.target.value; changed(false); });
+  $('time').addEventListener('input', e => { stopPlay(); state.minutes = +e.target.value; changed(false); });
 
-  let playing = false, last = 0;
+  let playing = false, last = 0, clock = 0;   // `clock` keeps fractions of a minute; the settings round to whole minutes
   function tick(t) {
     if (!playing) return;
     const dt = Math.max(0, Math.min((t - last) / 1000, 0.1)); last = t;
-    state.minutes += dt * 150;                                              // a whole day in about ten seconds
-    if (state.minutes >= 1439) { state.minutes = 1439; stopPlay(); }
+    clock += dt * 150; state.minutes = clock;                              // a whole day in about ten seconds
+    if (clock >= 1439) { state.minutes = 1439; stopPlay(); }
     changed(false);
     if (playing) requestAnimationFrame(tick);
   }
   function stopPlay() { playing = false; $('playDay').textContent = 'Play the day'; $('playDay').setAttribute('aria-pressed', 'false'); }
   $('playDay').addEventListener('click', () => {
     if (playing) { stopPlay(); return; }
-    playing = true; if (state.minutes >= 1430) state.minutes = 0; last = performance.now();
+    playing = true; if (state.minutes >= 1430) state.minutes = 0; clock = state.minutes; last = performance.now();
     $('playDay').textContent = 'Pause'; $('playDay').setAttribute('aria-pressed', 'true'); requestAnimationFrame(tick);
   });
 
@@ -290,26 +289,29 @@
     c.toBlob(b => { if (!b) return; const a = document.createElement('a'); a.href = URL.createObjectURL(b); a.download = 'sunprint.png'; document.body.append(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 2000); }, 'image/png');
   }
   $('save').addEventListener('click', () => { exportPng(); say('Saved sunprint.png to your downloads.'); });
-  $('copy').addEventListener('click', async () => { try { await navigator.clipboard.writeText(location.href); say('Link copied. Anyone who opens it sees this room.'); } catch { say('Copy the address from your browser bar: it holds this room.'); } });
+  $('copy').addEventListener('click', async () => { try { const fromFile = location.protocol === 'file:';
+      await navigator.clipboard.writeText(fromFile ? location.hash : location.href);
+      say(fromFile ? "Copied this room's settings (the part after the #; the place is rounded to about 1 km). Your friend opens their own copy of index.html and pastes it after the address." : 'Link copied. It holds this room, with the place rounded to about 1 km.'); } catch { say('Copy the address from your browser bar: it holds this room.'); } });
   const say = t => { $('status').textContent = t; };
 
   // ---------- link sharing ----------
-  function writeHash() {
-    const p = new URLSearchParams();
-    for (const [k, s] of Object.entries(KEYS)) p.set(s, String(+state[k].toFixed(3)));
-    try { history.replaceState(null, '', '#' + p.toString()); } catch { /* some browsers refuse on file:// pages: sharing then falls back to the address bar */ }
+  let hashTimer = 0;
+  function writeHash() {                                                    // after a pause, so Play does not hammer history.replaceState
+    clearTimeout(hashTimer);
+    hashTimer = setTimeout(() => { try { history.replaceState(null, '', '#' + SS.toHash(state)); } catch { /* some browsers refuse on file:// pages */ } }, 300);
   }
-  function readHash() {
-    const p = new URLSearchParams(location.hash.slice(1));
-    for (const [k, s] of Object.entries(KEYS)) if (p.has(s)) { const v = Number(p.get(s)); if (Number.isFinite(v)) state[k] = v; }
-  }
+  const readHash = () => SS.readHash(state, location.hash);
 
   // ---------- easter egg ----------
-  let typed = '';
+  let typed = '', eggShown = false;
   addEventListener('keydown', e => {
     const tag = e.target.tagName; if (e.key.length !== 1 || tag === 'INPUT' || tag === 'SELECT') return;
     typed = (typed + e.key.toLowerCase()).slice(-9);
-    if (typed === 'analemma') { typed = ''; state.noon = state.noon ? 0 : 1; const eg = $('egg'); eg.hidden = !state.noon; eg.textContent = 'The gold line is solar noon. A clock says noon at the same minute all year, but the Sun does not: it arrives up to 16 minutes early in November and 14 late in February. Plot where the Sun stands at one clock time all year and you get a figure of eight, the analemma. This is it, unfolded.'; changed(false); }
+    if (typed === 'analemma') {
+      typed = ''; eggShown = !eggShown; state.noon = eggShown ? 1 : 0;
+      $('egg').textContent = 'The gold line is solar noon. A clock says noon at the same minute all year, but the Sun does not: it arrives up to 16 minutes early in November and 14 late in February. Plot where the Sun stands at one clock time all year and you get a figure of eight, the analemma. This is it, unfolded.';
+      changed(false);
+    }
   });
 
   addEventListener('resize', () => changed(false));

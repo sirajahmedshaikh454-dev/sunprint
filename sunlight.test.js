@@ -107,3 +107,41 @@ test('floor map: no cell exceeds the hours of daylight, and cells near the windo
   assert.ok(Math.max(...g) <= 11 && Math.max(...g) > 1);
   assert.ok(g.some(v => v === 0), 'part of the floor stays dark');
 });
+
+// An independent check of the geometry: trace the ray in compass (east/north/up) vectors, with NONE of the code's
+// closed-form delta = az - facing shortcuts, so a sign error in the east-west shift cannot cancel out.
+function bruteLit(w, el, az, facing, px, py, h) {
+  const R = Math.PI / 180, A = facing * R, e = el * R, a = az * R;
+  const sun = { e: Math.cos(e) * Math.sin(a), n: Math.cos(e) * Math.cos(a), u: Math.sin(e) };    // unit vector towards the Sun
+  const right = [Math.cos(A), -Math.sin(A)], outward = [Math.sin(A), Math.cos(A)];               // as seen from inside, looking out
+  const sx = sun.e * right[0] + sun.n * right[1], sy = -(sun.e * outward[0] + sun.n * outward[1]), sz = sun.u;   // y is INTO the room
+  if (sy >= 0 || sz <= 0) return false;                                  // the Sun is behind the wall, or down
+  const t = py / -sy;                                                    // walk from the spot towards the Sun to the wall plane
+  const xw = px + sx * t, zw = h + sz * t;
+  if (xw < w.x - w.w / 2 || xw > w.x + w.w / 2 || zw < w.sill || zw > w.top) return false;
+  if (w.overhang > 0 && (w.top - zw) / sz * -sy < w.overhang) return false;   // the ray passes under the overhang
+  return true;
+}
+
+test('lit() agrees with an independent ray trace for walls facing every which way (so a sign error cannot hide)', () => {
+  let rng = 4242; const rand = () => (rng = (rng * 1664525 + 1013904223) % 4294967296) / 4294967296;
+  let lit = 0;
+  for (const facing of [0, 45, 90, 135, 180, 225, 270, 300]) for (let n = 0; n < 4000; n++) {
+    const el = 5 + rand() * 80, az = rand() * 360, h = rand() < 0.5 ? 0 : 0.75, w = { ...win, overhang: rand() < 0.5 ? 0 : 0.4 };
+    const px = rand() * room.W, py = rand() * room.L;
+    const mine = L.lit(w, L.sunRel(el, az, facing), px, py, h), truth = bruteLit(w, el, az, facing, px, py, h);
+    if (truth) lit++;
+    assert.equal(mine, truth, `facing ${facing}, sun el ${el.toFixed(1)} az ${az.toFixed(1)}, point ${px.toFixed(2)},${py.toFixed(2)}, h ${h}, overhang ${w.overhang}`);
+  }
+  assert.ok(lit > 400, 'the test must exercise lit points: ' + lit);
+});
+
+test('the year-print sun table is reused when only the window changes, and rebuilt when the place changes', () => {
+  const a = { lat: 30, lon: 70, tz: 5, win, facing: 180 };
+  const p1 = L.yearPrint(a, { x: 2, y: 1, h: 0 }), p2 = L.yearPrint({ ...a, win: { ...win, w: 2.4 } }, { x: 2, y: 1, h: 0 });
+  assert.ok(p2.hours.some((v, i) => v !== p1.hours[i]), 'a wider window must change the result');
+  const p3 = L.yearPrint({ ...a, lat: -30 }, { x: 2, y: 1, h: 0 });
+  assert.ok(p3.hours.some((v, i) => v !== p1.hours[i]), 'a different latitude must not reuse the old sun table');
+  const p4 = L.yearPrint(a, { x: 2, y: 1, h: 0 });
+  assert.deepEqual(Array.from(p4.hours), Array.from(p1.hours), 'back to the first place: identical result');
+});

@@ -69,13 +69,28 @@
   function polygonArea(p) { let a = 0; for (let i = 0; i < p.length; i++) { const q = p[(i + 1) % p.length]; a += p[i][0] * q[1] - q[0] * p[i][1]; } return Math.abs(a) / 2; }
 
   // ctx = { lat, lon, tz, win, facing }. Day-by-day, time-of-day grid for one spot: 0 night, 1 daylight but shaded, 2 sunlit.
+  // Sun elevation and azimuth for every 10-minute slot of the year. They depend only on place and time zone, not on the
+  // window, room or spot, so dragging those reuses the table.
+  let sunCache = { key: '', el: null, az: null };
+  function sunTable(ctx) {
+    const key = ctx.lat + '|' + ctx.lon + '|' + ctx.tz;
+    if (sunCache.key !== key) {
+      const el = new Float64Array(365 * STEPS), az = new Float64Array(365 * STEPS);
+      for (let d = 0; d < 365; d++) for (let i = 0; i < STEPS; i++) {
+        const p = Solar.position(ctx.lat, ctx.lon, ctx.tz, d + 1, i * STEP_MIN + STEP_MIN / 2);
+        el[d * STEPS + i] = p.el; az[d * STEPS + i] = p.az;
+      }
+      sunCache = { key, el, az };
+    }
+    return sunCache;
+  }
+
   function yearPrint(ctx, spot) {
-    const cells = new Uint8Array(365 * STEPS), hours = new Float32Array(365);
+    const cells = new Uint8Array(365 * STEPS), hours = new Float32Array(365), tab = sunTable(ctx);
     for (let d = 0; d < 365; d++) {
       let n = 0;
       for (let i = 0; i < STEPS; i++) {
-        const p = Solar.position(ctx.lat, ctx.lon, ctx.tz, d + 1, i * STEP_MIN + STEP_MIN / 2);
-        const s = sunRel(p.el, p.az, ctx.facing);
+        const s = sunRel(tab.el[d * STEPS + i], tab.az[d * STEPS + i], ctx.facing);
         const v = !s.up ? 0 : (lit(ctx.win, s, spot.x, spot.y, spot.h) ? 2 : 1);
         cells[d * STEPS + i] = v;
         if (v === 2) n++;

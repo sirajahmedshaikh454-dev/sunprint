@@ -4,7 +4,6 @@
   "private": true,
   "description": "A cyanotype of the sunlight in your room: where the sun lands, and when, all year.",
   "scripts": {
-    "start": "start index.html",
     "test": "node --test"
   },
   "license": "MIT",

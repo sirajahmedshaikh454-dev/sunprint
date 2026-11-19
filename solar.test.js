@@ -51,3 +51,14 @@ test('calendar helpers round-trip', () => {
   assert.equal(S.MONTH_START.length, 13); assert.equal(S.MONTH_START[12], 366);
   assert.deepEqual(S.monthDay(0), { month: 1, day: 1 }); assert.deepEqual(S.monthDay(999), { month: 12, day: 31 });   // clamped, never crashes
 });
+
+test('equation of time: the famous extremes (early November the Sun runs 16 minutes fast, mid-February 14 minutes slow)', () => {
+  assert.ok(Math.abs(S.equationOfTime(307) - 16.4) < 0.7, 'Nov 3: ' + S.equationOfTime(307));
+  assert.ok(Math.abs(S.equationOfTime(42) + 14.2) < 0.7, 'Feb 11: ' + S.equationOfTime(42));
+  assert.ok(Math.abs(S.equationOfTime(105)) < 1.0, 'mid-April: ' + S.equationOfTime(105));
+  // solar noon in Karachi (67.01 E, UTC+5) is near 12:52 + the equation of time: a clock-noon sun is a myth
+  const noon = S.solarNoon(67.01, 5, 307);
+  assert.ok(Math.abs(noon - (720 - 4 * 67.01 + 300 - 16.4)) < 0.7);
+  // and the Sun really is due south at that moment
+  assert.ok(Math.abs(S.position(24.86, 67.01, 5, 307, noon).az - 180) < 1.5);
+});
